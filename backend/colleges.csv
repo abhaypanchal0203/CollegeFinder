@@ -1,0 +1,5 @@
+college_id,name,location,branch,cutoff,fees,rating
+101,IIT Bombay,Mumbai,CSE,99.85,210000,4.9
+102,VJTI,Mumbai,CSE,99.40,85000,4.7
+103,COEP,Pune,IT,99.20,90000,4.8
+104,SPIT,Mumbai,IT,98.75,170000,4.6
