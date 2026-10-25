@@ -5,6 +5,11 @@ const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, ScanCommand } = require('@aws-sdk/lib-dynamodb');
 const jwt = require('jsonwebtoken'); 
 
+// ==========================================
+// NAYA CODE: S3 Client ko import kiya
+// ==========================================
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+
 const app = express();
 const PORT = 5000;
 
@@ -14,6 +19,7 @@ const JWT_SECRET = process.env.JWT_SECRET || "super_secret_college_key";
 app.use(cors());
 app.use(express.json());
 
+// DynamoDB Setup
 const client = new DynamoDBClient({
     region: process.env.AWS_DEFAULT_REGION || "us-east-1",
     credentials: {
@@ -25,13 +31,52 @@ const client = new DynamoDBClient({
 const docClient = DynamoDBDocumentClient.from(client);
 
 // ==========================================
-// Login Route (Authentication)
+// NAYA CODE: S3 Client Setup
+// ==========================================
+const s3Client = new S3Client({
+    region: process.env.AWS_DEFAULT_REGION || "us-east-1",
+    credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+        sessionToken: process.env.AWS_SESSION_TOKEN
+    }
+});
+
+// ==========================================
+// Login Route (Authentication + S3 Logging)
 // ==========================================
 app.post('/api/login', (req, res) => {
     const { email, password } = req.body;
 
     if (email === "abhay@student.com" && password === "password123") {
         const token = jwt.sign({ email: email, role: "student" }, JWT_SECRET, { expiresIn: '1h' });
+        
+        // ------------------------------------------
+        // NAYA CODE: S3 par Login Audit Log bhejna
+        // ------------------------------------------
+        try {
+            const logData = {
+                event: "USER_LOGIN",
+                user: email,
+                timestamp: new Date().toISOString(),
+                status: "SUCCESS"
+            };
+            
+            const command = new PutObjectCommand({
+                Bucket: "abhay-college-logs-2026", // Tera bucket name
+                Key: `login-logs/${email.split('@')[0]}-${Date.now()}.json`,
+                Body: JSON.stringify(logData, null, 2),
+                ContentType: "application/json"
+            });
+            
+            // Async execution - User ko rukna nahi padega
+            s3Client.send(command)
+                .then(() => console.log(`✅ Login audit log successfully saved to S3 for ${email}`))
+                .catch(err => console.error("❌ S3 Logging failed:", err));
+        } catch (error) {
+            console.error("S3 Setup Error:", error);
+        }
+        // ------------------------------------------
         
         res.json({ 
             success: true, 
@@ -44,7 +89,7 @@ app.post('/api/login', (req, res) => {
 });
 
 // ==========================================
-// NAYA: JWT Middleware (Chowkidar)
+// JWT Middleware (Chowkidar)
 // ==========================================
 const verifyToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
@@ -57,8 +102,8 @@ const verifyToken = (req, res, next) => {
 
     try {
         const decoded = jwt.verify(token, JWT_SECRET);
-        req.user = decoded; // Token valid hai, user data request me daal diya
-        next(); // Aage route par jaane do
+        req.user = decoded; 
+        next(); 
     } catch (error) {
         return res.status(401).json({ error: "Invalid ya expired token! Wapas login kar." });
     }
@@ -80,11 +125,9 @@ app.get('/api/top-colleges', async (req, res) => {
 
 
 // ==========================================
-// NAYA: Exams Route (Dynamic Data)
+// Exams Route (Dynamic Data)
 // ==========================================
 app.get('/api/exams', (req, res) => {
-    // Ye data tu baad me DynamoDB ya MongoDB me bhi shift kar sakta hai, 
-    // par abhi API ke through bhej rahe hain taaki frontend dynamic rahe.
     const examsData = [
         {
             id: "EXAM_01",
@@ -133,7 +176,6 @@ app.get('/api/exams', (req, res) => {
 
 // ==========================================
 // Python Compute Engine Route (Proxy) - SECURED
-// NAYA: Route ke andar 'verifyToken' add kiya
 // ==========================================
 app.post('/api/recommend', verifyToken, async (req, res) => {
     try {
